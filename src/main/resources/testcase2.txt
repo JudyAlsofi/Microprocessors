@@ -1,0 +1,8 @@
+# Test Case 2: Sequential Code with WAW hazard
+L.D F6, 0(R2)
+ADD.D F7, F1, F3
+L.D F2, 20(R2)
+MUL.D F0, F2, F4
+SUB.D F8, F2, F6
+DIV.D F10, F0, F6
+S.D F10, 0(R2)

@@ -1,0 +1,66 @@
+# Team Submission Information
+
+**Team Number:** TeamXX
+
+## Team Members
+
+| Name | ID | Tutorial Number |
+|------|----|--------------------|
+| [Member 1 Name] | [ID] | [Tutorial #] |
+| [Member 2 Name] | [ID] | [Tutorial #] |
+| [Member 3 Name] | [ID] | [Tutorial #] |
+
+## Project Summary
+
+This project implements a Tomasulo algorithm simulator with JavaFX GUI for the Microprocessors course.
+
+### Features Implemented
+- [x] Reservation stations for FP Add/Sub, Mul/Div, and Integer operations
+- [x] Load/Store buffers
+- [x] Register file with register renaming (tags)
+- [x] Direct-mapped data cache with configurable parameters
+- [x] Support for all required instruction types (loads, stores, FP ops, integer ops, branches)
+- [x] Cycle-by-cycle execution with GUI visualization
+- [x] Configurable latencies and cache parameters
+- [x] RAW, WAR, WAW hazard handling via register renaming
+
+### Test Cases Validated
+- [x] Test Case 1: Sequential code with RAW hazards
+- [x] Test Case 2: Sequential code with WAW hazard
+- [x] Test Case 3: Loop code with branches
+
+## How to Run
+
+1. Ensure Java 11+ and Maven are installed
+2. Open terminal/PowerShell in project directory
+3. Run: `mvn javafx:run`
+4. Use GUI to load test cases and step through execution
+
+## Known Limitations
+
+- Single issue/writeback per cycle (simplified model)
+- Branch instructions parsed but not fully executed (no PC updates)
+- Synthetic result values used for demonstration
+
+## Division of Work
+
+| Task | Assigned To | Status |
+|------|-------------|--------|
+| Core engine implementation | [Name] | ✅ Complete |
+| GUI development | [Name] | ✅ Complete |
+| Cache model | [Name] | ✅ Complete |
+| Instruction parser | [Name] | ✅ Complete |
+| Testing & validation | All | ✅ Complete |
+| Documentation | [Name] | ✅ Complete |
+
+## Submission Date
+December 5, 2025
+
+---
+
+**Declaration:** We declare that this work is our own and we have not copied code from any external source or other teams. We understand that plagiarism will result in zero marks for all parties involved.
+
+Signatures:
+- [Member 1]: ________________
+- [Member 2]: ________________
+- [Member 3]: ________________
