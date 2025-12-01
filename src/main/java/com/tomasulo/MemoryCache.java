@@ -13,6 +13,8 @@ public class MemoryCache {
     private final Map<Integer, Integer> memory = new HashMap<>(); // byte address to value
 
     private final CacheLine[] linesArr;
+    private int hits = 0;
+    private int misses = 0;
 
     public MemoryCache(int cacheSizeBytes, int blockSizeBytes, int hitLatency, int missPenalty) {
         this.cacheSizeBytes = cacheSizeBytes;
@@ -40,8 +42,10 @@ public class MemoryCache {
         int tag = tagOf(address);
         CacheLine line = linesArr[idx];
         if (line.valid && line.tag == tag) {
+            hits++;
             return hitLatency;
         } else {
+            misses++;
             // load block from memory (simulated): bring into cache
             line.valid = true;
             line.tag = tag;
@@ -64,10 +68,27 @@ public class MemoryCache {
     }
 
     public void writeWord(int address, int value) {
+        // Write word to memory and update cache if block is present
         for (int i = 0; i < 4; i++) {
             memory.put(address + i, (value >> (8 * i)) & 0xFF);
         }
+        // Mark cache line as valid with updated data
+        int idx = indexOf(address);
+        int tag = tagOf(address);
+        CacheLine line = linesArr[idx];
+        if (line.valid && line.tag == tag) {
+            // Cache hit on write - data is already in cache
+        } else {
+            // Write-allocate: bring block into cache
+            line.valid = true;
+            line.tag = tag;
+        }
     }
+    
+    public int getHits() { return hits; }
+    public int getMisses() { return misses; }
+    public int getLines() { return lines; }
+    public int getBlockSize() { return blockSizeBytes; }
 
     private static class CacheLine {
         boolean valid = false;

@@ -28,6 +28,7 @@ public class MainApp extends Application {
     private TableView<Map<String, Object>> loadBufferTable = new TableView<>();
     private TableView<Map.Entry<String, Integer>> registerTable = new TableView<>();
     private Label cycleLabel = new Label("Cycle: 0");
+    private Label cacheStatsLabel = new Label("Cache: Hits=0 Misses=0");
     
     // Config fields
     private TextField addLatencyField, mulLatencyField, divLatencyField, loadLatencyField;
@@ -81,7 +82,10 @@ public class MainApp extends Application {
             log("Initialized registers for Test Case 1");
         });
         
-        controls.getChildren().addAll(cycleLabel, new Separator(), loadBtn, stepBtn, run10, resetBtn, initRegsBtn);
+        Label cacheStatsLabel = new Label("Cache: Hits=0 Misses=0");
+        cacheStatsLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: #666;");
+        
+        controls.getChildren().addAll(cycleLabel, new Separator(), loadBtn, stepBtn, run10, resetBtn, initRegsBtn, new Separator(), cacheStatsLabel);
         
         // Config panel
         TitledPane configPane = new TitledPane();
@@ -382,6 +386,10 @@ public class MainApp extends Application {
         
         // Update cycle label
         cycleLabel.setText("Cycle: " + snapshot.get("cycle"));
+        
+        // Update cache statistics
+        cacheStatsLabel.setText(String.format("Cache: Hits=%d Misses=%d", 
+            engine.cache.getHits(), engine.cache.getMisses()));
         
         // Update instruction queue
         instrTable.setItems(FXCollections.observableArrayList());

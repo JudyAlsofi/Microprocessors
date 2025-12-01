@@ -11,6 +11,8 @@ public class ReservationStation {
     public int remaining = 0; // cycles remaining for execution
     public boolean executing = false;
     public boolean writebackPending = false;
+    public Integer address = null; // effective address for loads/stores
+    public boolean addressReady = false; // true when address is computed
 
     public ReservationStation(String name) {
         this.name = name;
@@ -24,5 +26,7 @@ public class ReservationStation {
         remaining = 0;
         executing = false;
         writebackPending = false;
+        address = null;
+        addressReady = false;
     }
 }
