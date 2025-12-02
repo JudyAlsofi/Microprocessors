@@ -39,9 +39,23 @@ public class TomasuloEngine {
     public void step() {
         cycle++;
         history.add("Cycle " + cycle + ": start");
-        issueStep();
-        executeStep();
+        
+        // Clear justIssued flags from previous cycle
+        List<ReservationStation> all = new ArrayList<>();
+        all.addAll(addStations); all.addAll(mulStations); all.addAll(intStations); all.addAll(loadBuffers);
+        for (ReservationStation rs : all) {
+            if (rs.busy) rs.justIssued = false;
+        }
+        
+        // Phase 1: Writeback (broadcast results from previous cycle)
         writebackStep();
+        
+        // Phase 2: Issue new instruction
+        issueStep();
+        
+        // Phase 3: Execute (start execution for ready instructions, decrement counters)
+        executeStep();
+        
         history.add("Cycle " + cycle + ": end");
     }
 
@@ -61,6 +75,7 @@ public class TomasuloEngine {
         free.executing = false;
         free.writebackPending = false;
         free.addressReady = false;
+        free.justIssued = true; // Mark as just issued to prevent execution this cycle
         
         // For loads/stores and branches, handle base register
         if (ins.type == InstructionType.LD || ins.type == InstructionType.LW || 
@@ -146,6 +161,9 @@ public class TomasuloEngine {
         
         for (ReservationStation rs : all) {
             if (!rs.busy) continue;
+            
+            // Skip if just issued this cycle - cannot start execution until next cycle
+            if (rs.justIssued) continue;
             
             // For load/store: compute effective address when base register ready
             if (!rs.addressReady && isLoadOrStore(rs.inst)) {
@@ -281,8 +299,18 @@ public class TomasuloEngine {
             // Broadcast value to waiting stations
             for (ReservationStation rs : all) {
                 if (!rs.busy) continue;
-                if (ready.name.equals(rs.qj)) { rs.vj = value; rs.qj = null; }
-                if (ready.name.equals(rs.qk)) { rs.vk = value; rs.qk = null; }
+                if (ready.name.equals(rs.qj)) { 
+                    rs.vj = value; 
+                    rs.qj = null;
+                    // Mark that this station just received a value - can't start execution this cycle
+                    rs.justIssued = true;
+                }
+                if (ready.name.equals(rs.qk)) { 
+                    rs.vk = value; 
+                    rs.qk = null;
+                    // Mark that this station just received a value - can't start execution this cycle
+                    rs.justIssued = true;
+                }
             }
         }
 

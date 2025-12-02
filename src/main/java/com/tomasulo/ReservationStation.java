@@ -11,6 +11,7 @@ public class ReservationStation {
     public int remaining = 0; // cycles remaining for execution
     public boolean executing = false;
     public boolean writebackPending = false;
+    public boolean justIssued = false; // true in the cycle the instruction was issued
     public Integer address = null; // effective address for loads/stores
     public boolean addressReady = false; // true when address is computed
 
@@ -26,6 +27,7 @@ public class ReservationStation {
         remaining = 0;
         executing = false;
         writebackPending = false;
+        justIssued = false;
         address = null;
         addressReady = false;
     }

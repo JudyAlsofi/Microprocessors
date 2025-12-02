@@ -43,7 +43,7 @@ public class MainApp extends Application {
     private VBox loadStationsBox = new VBox(5);
     
     // Config fields
-    private TextField addLatencyField, mulLatencyField, divLatencyField, loadLatencyField;
+    private TextField addLatencyField, mulLatencyField, divLatencyField, loadLatencyField, storeLatencyField;
     private TextField cacheSizeField, blockSizeField, hitLatencyField, missPenaltyField;
     private TextField addStationsField, mulStationsField, intStationsField, loadBuffersField;
 
@@ -131,6 +131,11 @@ public class MainApp extends Application {
         loadLatencyField = new TextField(String.valueOf(cfg.loadLatency));
         loadLatencyField.setPrefWidth(60);
         configGrid.add(loadLatencyField, 3, row++);
+
+        configGrid.add(new Label("Store Latency:"), 2, row);
+        storeLatencyField = new TextField(String.valueOf(cfg.storeLatency));
+        storeLatencyField.setPrefWidth(60);
+        configGrid.add(storeLatencyField, 3, row++);
         
         configGrid.add(new Label("Cache Size (B):"), 0, row);
         cacheSizeField = new TextField(String.valueOf(cfg.cacheSizeBytes));
@@ -308,7 +313,7 @@ public class MainApp extends Application {
         logArea.setPrefRowCount(8);
         root.setBottom(logArea);
 
-        Scene scene = new Scene(root, 1800, 900);
+        Scene scene = new Scene(root, 1200, 750);
         primaryStage.setScene(scene);
         primaryStage.show();
         refreshUI();
@@ -464,6 +469,7 @@ public class MainApp extends Application {
             cfg.mulLatency = Integer.parseInt(mulLatencyField.getText());
             cfg.divLatency = Integer.parseInt(divLatencyField.getText());
             cfg.loadLatency = Integer.parseInt(loadLatencyField.getText());
+            cfg.storeLatency = Integer.parseInt(storeLatencyField.getText());
             cfg.cacheSizeBytes = Integer.parseInt(cacheSizeField.getText());
             cfg.blockSizeBytes = Integer.parseInt(blockSizeField.getText());
             cfg.cacheHitLatency = Integer.parseInt(hitLatencyField.getText());
@@ -660,19 +666,22 @@ public class MainApp extends Application {
         });
         finishCycleTable.setItems(FXCollections.observableArrayList(finishCycles));
         
-        // Update registers (show first 10 of each type)
+        // Update registers (show all 32 of each type)
         @SuppressWarnings("unchecked")
         Map<String, Integer> regs = (Map<String, Integer>) snapshot.get("registers");
+        @SuppressWarnings("unchecked")
+        Map<String, String> regTags = (Map<String, String>) snapshot.get("registerTags");
         List<Map.Entry<String, Integer>> regList = new ArrayList<>();
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 32; i++) {
             String rName = "R" + i;
             if (regs.containsKey(rName)) regList.add(new java.util.AbstractMap.SimpleEntry<>(rName, regs.get(rName)));
         }
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 32; i++) {
             String fName = "F" + i;
             if (regs.containsKey(fName)) regList.add(new java.util.AbstractMap.SimpleEntry<>(fName, regs.get(fName)));
         }
         registerTable.setItems(FXCollections.observableArrayList(regList));
+        registerTable.refresh(); // Force refresh to update tag column
         
         // Update log
         logArea.clear();

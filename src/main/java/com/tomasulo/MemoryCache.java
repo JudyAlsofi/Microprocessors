@@ -33,28 +33,35 @@ public class MemoryCache {
         // Initialize memory with meaningful test values at specific addresses
         // These addresses are commonly used in test cases
         
-        // Address 1000-1007: Base address for R2 in test cases
-        writeWord(1000, 10);   // Value 10 at address 1000 (for offset 0)
-        writeWord(1004, 20);   // Value 20 at address 1004 (for offset 4)
-        writeWord(1008, 30);   // Value 30 at address 1008 (for offset 8)
-        writeWord(1012, 40);   // Value 40 at address 1012 (for offset 12)
-        writeWord(1016, 50);   // Value 50 at address 1016 (for offset 16)
-        writeWord(1020, 60);   // Value 60 at address 1020 (for offset 20)
-        writeWord(1024, 70);   // Value 70 at address 1024 (for offset 24)
+        // Address 1000-1024: Base address for R2 in test cases
+        writeWordToMemoryOnly(1000, 10);   // Value 10 at address 1000 (for offset 0)
+        writeWordToMemoryOnly(1004, 20);   // Value 20 at address 1004 (for offset 4)
+        writeWordToMemoryOnly(1008, 30);   // Value 30 at address 1008 (for offset 8)
+        writeWordToMemoryOnly(1012, 40);   // Value 40 at address 1012 (for offset 12)
+        writeWordToMemoryOnly(1016, 50);   // Value 50 at address 1016 (for offset 16)
+        writeWordToMemoryOnly(1020, 60);   // Value 60 at address 1020 (for offset 20)
+        writeWordToMemoryOnly(1024, 70);   // Value 70 at address 1024 (for offset 24)
         
-        // Address 2000-2007: Base address for alternative test cases
-        writeWord(2000, 100);  // Value 100 at address 2000
-        writeWord(2004, 200);  // Value 200 at address 2004
-        writeWord(2008, 300);  // Value 300 at address 2008
-        writeWord(2012, 400);  // Value 400 at address 2012
-        writeWord(2016, 500);  // Value 500 at address 2016
-        writeWord(2020, 600);  // Value 600 at address 2020
+        // Address 2000-2020: Base address for alternative test cases
+        writeWordToMemoryOnly(2000, 100);  // Value 100 at address 2000
+        writeWordToMemoryOnly(2004, 200);  // Value 200 at address 2004
+        writeWordToMemoryOnly(2008, 300);  // Value 300 at address 2008
+        writeWordToMemoryOnly(2012, 400);  // Value 400 at address 2012
+        writeWordToMemoryOnly(2016, 500);  // Value 500 at address 2016
+        writeWordToMemoryOnly(2020, 600);  // Value 600 at address 2020
         
-        // Address 0-32: For edge case testing with R2=0
-        writeWord(0, 5);       // Value 5 at address 0
-        writeWord(8, 15);      // Value 15 at address 8
-        writeWord(16, 25);     // Value 25 at address 16
-        writeWord(24, 35);     // Value 35 at address 24
+        // Address 0-24: For edge case testing with R2=0
+        writeWordToMemoryOnly(0, 5);       // Value 5 at address 0
+        writeWordToMemoryOnly(8, 15);      // Value 15 at address 8
+        writeWordToMemoryOnly(16, 25);     // Value 25 at address 16
+        writeWordToMemoryOnly(24, 35);     // Value 35 at address 24
+    }
+    
+    // Write to memory only, without updating cache (for initialization)
+    private void writeWordToMemoryOnly(int address, int value) {
+        for (int i = 0; i < 4; i++) {
+            memory.put(address + i, (value >> (8 * i)) & 0xFF);
+        }
     }
 
     // Simple direct-mapped index

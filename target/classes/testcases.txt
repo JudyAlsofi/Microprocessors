@@ -7,11 +7,3 @@ DIV.D F10, F0, F6
 ADD.D F6, F8, F2
 S.D F6, 8(R2)
 
-# Test Case 3 (loop)
-DADDI R1, R1, 24
-DADDI R2, R2, 0
-LOOP: L.D F0, 8(R1)
-MUL.D F4, F0, F2
-S.D F4, 8(R1)
-DSUBI R1, R1, 8
-BNE R1, R2, -4
