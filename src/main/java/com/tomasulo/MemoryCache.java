@@ -89,6 +89,36 @@ public class MemoryCache {
     public int getMisses() { return misses; }
     public int getLines() { return lines; }
     public int getBlockSize() { return blockSizeBytes; }
+    
+    // Get cache state for display
+    public List<Map<String, Object>> getCacheState() {
+        List<Map<String, Object>> state = new ArrayList<>();
+        for (int i = 0; i < lines; i++) {
+            Map<String, Object> lineInfo = new HashMap<>();
+            lineInfo.put("index", i);
+            lineInfo.put("valid", linesArr[i].valid);
+            lineInfo.put("tag", linesArr[i].valid ? linesArr[i].tag : -1);
+            // Calculate address range for this block
+            if (linesArr[i].valid) {
+                int baseAddr = linesArr[i].tag * blockSizeBytes;
+                lineInfo.put("baseAddr", baseAddr);
+                lineInfo.put("endAddr", baseAddr + blockSizeBytes - 1);
+                // Get first few bytes as sample data
+                StringBuilder data = new StringBuilder();
+                for (int j = 0; j < Math.min(4, blockSizeBytes); j++) {
+                    int byteVal = memory.getOrDefault(baseAddr + j, 0);
+                    data.append(String.format("%02X ", byteVal));
+                }
+                lineInfo.put("data", data.toString().trim());
+            } else {
+                lineInfo.put("baseAddr", -1);
+                lineInfo.put("endAddr", -1);
+                lineInfo.put("data", "---");
+            }
+            state.add(lineInfo);
+        }
+        return state;
+    }
 
     private static class CacheLine {
         boolean valid = false;

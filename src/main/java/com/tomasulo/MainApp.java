@@ -3,9 +3,13 @@ package com.tomasulo;
 import javafx.application.Application;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
@@ -13,6 +17,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,13 +27,20 @@ public class MainApp extends Application {
 
     private TextArea logArea = new TextArea();
     private TableView<String> instrTable = new TableView<>();
-    private TableView<Map<String, Object>> addStationTable = new TableView<>();
-    private TableView<Map<String, Object>> mulStationTable = new TableView<>();
-    private TableView<Map<String, Object>> intStationTable = new TableView<>();
-    private TableView<Map<String, Object>> loadBufferTable = new TableView<>();
     private TableView<Map.Entry<String, Integer>> registerTable = new TableView<>();
+    private TableView<Map<String, Object>> cacheTable = new TableView<>();
+    private TableView<Map<String, Object>> finishCycleTable = new TableView<>();
     private Label cycleLabel = new Label("Cycle: 0");
     private Label cacheStatsLabel = new Label("Cache: Hits=0 Misses=0");
+    
+    // Track instruction finish cycles (station name -> finish info)
+    private Map<String, Map<String, Object>> instructionHistory = new HashMap<>();
+    
+    // Station box containers
+    private VBox addStationsBox = new VBox(5);
+    private VBox mulStationsBox = new VBox(5);
+    private VBox intStationsBox = new VBox(5);
+    private VBox loadStationsBox = new VBox(5);
     
     // Config fields
     private TextField addLatencyField, mulLatencyField, divLatencyField, loadLatencyField;
@@ -72,6 +84,7 @@ public class MainApp extends Application {
         resetBtn.setOnAction(e -> {
             applyConfig();
             engine = new TomasuloEngine(cfg);
+            instructionHistory.clear(); // Clear instruction history on reset
             refreshUI();
         });
         
@@ -171,123 +184,278 @@ public class MainApp extends Application {
         topBox.getChildren().addAll(controls, configPane);
         root.setTop(topBox);
 
-        // Center: TabPane with tables
-        TabPane tabPane = new TabPane();
+        // Center: Main layout with all stations visible
+        ScrollPane scrollPane = new ScrollPane();
+        scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
         
-        // Instructions tab
-        Tab instrTab = new Tab("Instructions");
-        instrTab.setClosable(false);
+        VBox mainContent = new VBox(15);
+        mainContent.setPadding(new Insets(15));
+        
+        // Top row: Instruction Queue and Registers side by side
+        HBox topRow = new HBox(15);
+        topRow.setPrefHeight(200);
+        
+        // Instruction Queue
+        VBox instrBox = new VBox(5);
+        Label instrLabel = new Label("Instruction Queue");
+        instrLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         instrTable.setItems(FXCollections.observableArrayList());
-        TableColumn<String, String> instrCol = new TableColumn<>("Instruction Queue");
+        instrTable.setPrefHeight(150);
+        TableColumn<String, String> instrCol = new TableColumn<>("Instruction");
         instrCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue()));
         instrCol.setPrefWidth(300);
         instrTable.getColumns().add(instrCol);
-        instrTab.setContent(instrTable);
+        instrBox.getChildren().addAll(instrLabel, instrTable);
+        instrBox.setPrefWidth(350);
         
-        // Add Stations tab
-        Tab addTab = new Tab("Add/Sub Stations");
-        addTab.setClosable(false);
-        addStationTable = createStationTable();
-        addTab.setContent(addStationTable);
-        
-        // Mul Stations tab
-        Tab mulTab = new Tab("Mul/Div Stations");
-        mulTab.setClosable(false);
-        mulStationTable = createStationTable();
-        mulTab.setContent(mulStationTable);
-        
-        // Int Stations tab
-        Tab intTab = new Tab("Int Stations");
-        intTab.setClosable(false);
-        intStationTable = createStationTable();
-        intTab.setContent(intStationTable);
-        
-        // Load Buffers tab
-        Tab loadTab = new Tab("Load/Store Buffers");
-        loadTab.setClosable(false);
-        loadBufferTable = createStationTable();
-        loadTab.setContent(loadBufferTable);
-        
-        // Registers tab
-        Tab regTab = new Tab("Registers");
-        regTab.setClosable(false);
+        // Registers
+        VBox regBox = new VBox(5);
+        Label regLabel = new Label("Register File");
+        regLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         registerTable.setItems(FXCollections.observableArrayList());
+        registerTable.setPrefHeight(150);
         TableColumn<Map.Entry<String, Integer>, String> regNameCol = new TableColumn<>("Register");
         regNameCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue().getKey()));
-        regNameCol.setPrefWidth(100);
+        regNameCol.setPrefWidth(80);
         TableColumn<Map.Entry<String, Integer>, String> regValCol = new TableColumn<>("Value");
         regValCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(String.valueOf(d.getValue().getValue())));
         regValCol.setPrefWidth(100);
-        registerTable.getColumns().add(regNameCol);
-        registerTable.getColumns().add(regValCol);
-        regTab.setContent(registerTable);
+        TableColumn<Map.Entry<String, Integer>, String> regTagCol = new TableColumn<>("Qi");
+        regTagCol.setCellValueFactory(d -> {
+            String regName = d.getValue().getKey();
+            String tag = engine.registers.getTag(regName);
+            return new javafx.beans.property.SimpleStringProperty(tag != null ? tag : "");
+        });
+        regTagCol.setPrefWidth(80);
+        registerTable.getColumns().addAll(regNameCol, regValCol, regTagCol);
+        regBox.getChildren().addAll(regLabel, registerTable);
+        regBox.setPrefWidth(280);
         
-        tabPane.getTabs().addAll(instrTab, addTab, mulTab, intTab, loadTab, regTab);
-        root.setCenter(tabPane);
+        // Finish Cycle Display
+        VBox finishBox = new VBox(5);
+        Label finishLabel = new Label("Instruction Finish Times");
+        finishLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        finishCycleTable.setItems(FXCollections.observableArrayList());
+        finishCycleTable.setPrefHeight(150);
+        
+        TableColumn<Map<String, Object>, String> stationCol = new TableColumn<>("Station");
+        stationCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+            d.getValue().get("station") != null ? d.getValue().get("station").toString() : ""));
+        stationCol.setPrefWidth(70);
+        
+        TableColumn<Map<String, Object>, String> instCol = new TableColumn<>("Instruction");
+        instCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+            d.getValue().get("instruction") != null ? d.getValue().get("instruction").toString() : ""));
+        instCol.setPrefWidth(150);
+        
+        TableColumn<Map<String, Object>, String> finishCol = new TableColumn<>("Finish Cycle");
+        finishCol.setCellValueFactory(d -> {
+            Object finish = d.getValue().get("finishCycle");
+            if (finish != null) {
+                return new javafx.beans.property.SimpleStringProperty(finish.toString());
+            }
+            return new javafx.beans.property.SimpleStringProperty("---");
+        });
+        finishCol.setPrefWidth(90);
+        
+        TableColumn<Map<String, Object>, String> statusCol = new TableColumn<>("Status");
+        statusCol.setCellValueFactory(d -> {
+            Object status = d.getValue().get("status");
+            return new javafx.beans.property.SimpleStringProperty(
+                status != null ? status.toString() : "---");
+        });
+        statusCol.setPrefWidth(80);
+        
+        finishCycleTable.getColumns().addAll(stationCol, instCol, finishCol, statusCol);
+        finishBox.getChildren().addAll(finishLabel, finishCycleTable);
+        finishBox.setPrefWidth(320);
+        
+        topRow.getChildren().addAll(instrBox, regBox, finishBox);
+        
+        // Middle: Reservation Stations in a grid
+        GridPane stationsGrid = new GridPane();
+        stationsGrid.setHgap(15);
+        stationsGrid.setVgap(15);
+        stationsGrid.setPadding(new Insets(10));
+        
+        // Add/Sub Stations
+        VBox addSection = createStationSection("Add/Sub Stations", addStationsBox);
+        stationsGrid.add(addSection, 0, 0);
+        
+        // Mul/Div Stations
+        VBox mulSection = createStationSection("Mul/Div Stations", mulStationsBox);
+        stationsGrid.add(mulSection, 1, 0);
+        
+        // Integer Stations
+        VBox intSection = createStationSection("Integer Stations", intStationsBox);
+        stationsGrid.add(intSection, 0, 1);
+        
+        // Load/Store Buffers
+        VBox loadSection = createStationSection("Load/Store Buffers", loadStationsBox);
+        stationsGrid.add(loadSection, 1, 1);
+        
+        // Cache Display
+        VBox cacheSection = createCacheSection();
+        stationsGrid.add(cacheSection, 2, 0, 1, 2); // Span 2 rows
+        
+        mainContent.getChildren().addAll(topRow, stationsGrid);
+        scrollPane.setContent(mainContent);
+        root.setCenter(scrollPane);
 
         // Bottom: log area
         logArea.setEditable(false);
         logArea.setPrefRowCount(8);
         root.setBottom(logArea);
 
-        Scene scene = new Scene(root, 1200, 700);
+        Scene scene = new Scene(root, 1800, 900);
         primaryStage.setScene(scene);
         primaryStage.show();
         refreshUI();
     }
     
-    private TableView<Map<String, Object>> createStationTable() {
-        TableView<Map<String, Object>> table = new TableView<>();
+    private VBox createStationSection(String title, VBox stationsContainer) {
+        VBox section = new VBox(8);
+        Label titleLabel = new Label(title);
+        titleLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        titleLabel.setTextFill(Color.DARKBLUE);
         
-        TableColumn<Map<String, Object>, String> nameCol = new TableColumn<>("Name");
-        nameCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("name") != null ? d.getValue().get("name").toString() : ""));
-        nameCol.setPrefWidth(80);
+        // Create header table with column separators
+        HBox header = new HBox(0);
+        header.setPadding(new Insets(5));
+        header.setStyle("-fx-background-color: #E0E0E0; -fx-border-color: #999; -fx-border-width: 1;");
         
-        TableColumn<Map<String, Object>, String> busyCol = new TableColumn<>("Busy");
-        busyCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("busy") != null ? d.getValue().get("busy").toString() : "false"));
-        busyCol.setPrefWidth(50);
+        String[] headers = {"Name", "Busy", "Op", "Vj", "Vk", "Qj", "Qk", "Rem"};
+        int[] colWidths = {60, 50, 70, 60, 60, 60, 60, 50};
         
-        TableColumn<Map<String, Object>, String> instCol = new TableColumn<>("Instruction");
-        instCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("inst") != null ? d.getValue().get("inst").toString() : ""));
-        instCol.setPrefWidth(150);
+        for (int i = 0; i < headers.length; i++) {
+            VBox headerCell = new VBox();
+            headerCell.setPrefWidth(colWidths[i]);
+            headerCell.setAlignment(Pos.CENTER);
+            headerCell.setStyle("-fx-border-color: #999; -fx-border-width: 0 1 0 0; -fx-padding: 5;");
+            Label h = new Label(headers[i]);
+            h.setFont(Font.font("Arial", FontWeight.BOLD, 11));
+            h.setAlignment(Pos.CENTER);
+            headerCell.getChildren().add(h);
+            header.getChildren().add(headerCell);
+        }
         
-        TableColumn<Map<String, Object>, String> vjCol = new TableColumn<>("Vj");
-        vjCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("vj") != null ? d.getValue().get("vj").toString() : ""));
-        vjCol.setPrefWidth(60);
+        section.getChildren().addAll(titleLabel, header, stationsContainer);
+        return section;
+    }
+    
+    private HBox createStationBox(Map<String, Object> stationData) {
+        HBox box = new HBox(0);
+        box.setPadding(new Insets(5));
+        box.setStyle("-fx-background-color: #F5F5F5; -fx-border-color: #999; -fx-border-width: 1;");
         
-        TableColumn<Map<String, Object>, String> vkCol = new TableColumn<>("Vk");
-        vkCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("vk") != null ? d.getValue().get("vk").toString() : ""));
-        vkCol.setPrefWidth(60);
+        String name = stationData.get("name") != null ? stationData.get("name").toString() : "";
+        boolean busy = stationData.get("busy") != null && Boolean.parseBoolean(stationData.get("busy").toString());
+        String inst = stationData.get("inst") != null ? stationData.get("inst").toString() : "";
+        String vj = stationData.get("vj") != null ? stationData.get("vj").toString() : "";
+        String vk = stationData.get("vk") != null ? stationData.get("vk").toString() : "";
+        String qj = stationData.get("qj") != null ? stationData.get("qj").toString() : "";
+        String qk = stationData.get("qk") != null ? stationData.get("qk").toString() : "";
+        String rem = stationData.get("remaining") != null ? stationData.get("remaining").toString() : "0";
         
-        TableColumn<Map<String, Object>, String> qjCol = new TableColumn<>("Qj");
-        qjCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("qj") != null ? d.getValue().get("qj").toString() : ""));
-        qjCol.setPrefWidth(60);
+        // Extract op from instruction if available
+        String op = "";
+        if (!inst.isEmpty() && inst.contains(" ")) {
+            op = inst.split("\\s+")[0];
+        }
         
-        TableColumn<Map<String, Object>, String> qkCol = new TableColumn<>("Qk");
-        qkCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("qk") != null ? d.getValue().get("qk").toString() : ""));
-        qkCol.setPrefWidth(60);
+        // Column widths matching header
+        int[] colWidths = {60, 50, 70, 60, 60, 60, 60, 50};
+        String[] values = {name, busy ? "Yes" : "No", op, vj, vk, qj, qk, rem};
+        Color[] colors = {
+            Color.BLACK, // name
+            busy ? Color.RED : Color.BLACK, // busy
+            Color.BLACK, // op
+            Color.BLACK, // vj
+            Color.BLACK, // vk
+            !qj.isEmpty() ? Color.BLUE : Color.BLACK, // qj
+            !qk.isEmpty() ? Color.BLUE : Color.BLACK, // qk
+            Color.BLACK  // rem
+        };
         
-        TableColumn<Map<String, Object>, String> remCol = new TableColumn<>("Remaining");
-        remCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("remaining") != null ? d.getValue().get("remaining").toString() : "0"));
-        remCol.setPrefWidth(80);
+        // Create cells with borders for each column
+        for (int i = 0; i < values.length; i++) {
+            VBox cell = new VBox();
+            cell.setPrefWidth(colWidths[i]);
+            cell.setAlignment(Pos.CENTER);
+            cell.setStyle("-fx-border-color: #999; -fx-border-width: 0 1 0 0; -fx-padding: 5;");
+            
+            Label label = new Label(values[i]);
+            if (i == 0) { // Name column
+                label.setFont(Font.font("Arial", FontWeight.BOLD, 11));
+            } else {
+                label.setFont(Font.font("Arial", 11));
+            }
+            label.setTextFill(colors[i]);
+            label.setAlignment(Pos.CENTER);
+            cell.getChildren().add(label);
+            box.getChildren().add(cell);
+        }
         
-        table.getColumns().add(nameCol);
-        table.getColumns().add(busyCol);
-        table.getColumns().add(instCol);
-        table.getColumns().add(vjCol);
-        table.getColumns().add(vkCol);
-        table.getColumns().add(qjCol);
-        table.getColumns().add(qkCol);
-        table.getColumns().add(remCol);
-        return table;
+        return box;
+    }
+    
+    private VBox createCacheSection() {
+        VBox section = new VBox(8);
+        Label titleLabel = new Label("Data Cache");
+        titleLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        titleLabel.setTextFill(Color.DARKBLUE);
+        
+        // Create cache table
+        cacheTable.setPrefHeight(400);
+        cacheTable.setPrefWidth(350);
+        
+        // Index column
+        TableColumn<Map<String, Object>, String> indexCol = new TableColumn<>("Index");
+        indexCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+            d.getValue().get("index") != null ? d.getValue().get("index").toString() : ""));
+        indexCol.setPrefWidth(50);
+        
+        // Valid column
+        TableColumn<Map<String, Object>, String> validCol = new TableColumn<>("Valid");
+        validCol.setCellValueFactory(d -> {
+            boolean valid = d.getValue().get("valid") != null && Boolean.parseBoolean(d.getValue().get("valid").toString());
+            return new javafx.beans.property.SimpleStringProperty(valid ? "Yes" : "No");
+        });
+        validCol.setPrefWidth(50);
+        
+        // Tag column
+        TableColumn<Map<String, Object>, String> tagCol = new TableColumn<>("Tag");
+        tagCol.setCellValueFactory(d -> {
+            Object tag = d.getValue().get("tag");
+            return new javafx.beans.property.SimpleStringProperty(
+                tag != null && !tag.toString().equals("-1") ? tag.toString() : "---");
+        });
+        tagCol.setPrefWidth(60);
+        
+        // Address range column
+        TableColumn<Map<String, Object>, String> addrCol = new TableColumn<>("Address Range");
+        addrCol.setCellValueFactory(d -> {
+            Object base = d.getValue().get("baseAddr");
+            Object end = d.getValue().get("endAddr");
+            if (base != null && !base.toString().equals("-1")) {
+                return new javafx.beans.property.SimpleStringProperty(
+                    base.toString() + "-" + end.toString());
+            }
+            return new javafx.beans.property.SimpleStringProperty("---");
+        });
+        addrCol.setPrefWidth(120);
+        
+        // Data sample column
+        TableColumn<Map<String, Object>, String> dataCol = new TableColumn<>("Data (hex)");
+        dataCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+            d.getValue().get("data") != null ? d.getValue().get("data").toString() : "---"));
+        dataCol.setPrefWidth(100);
+        
+        cacheTable.getColumns().addAll(indexCol, validCol, tagCol, addrCol, dataCol);
+        
+        section.getChildren().addAll(titleLabel, cacheTable);
+        return section;
     }
     
     private void applyConfig() {
@@ -399,22 +567,98 @@ public class MainApp extends Application {
             instrTable.getItems().add(inst.toString());
         }
         
-        // Update reservation stations
+        // Update reservation stations - populate boxes
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> addList = (List<Map<String, Object>>) snapshot.get("addStations");
-        addStationTable.setItems(FXCollections.observableArrayList(addList));
+        addStationsBox.getChildren().clear();
+        for (Map<String, Object> station : addList) {
+            addStationsBox.getChildren().add(createStationBox(station));
+        }
         
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> mulList = (List<Map<String, Object>>) snapshot.get("mulStations");
-        mulStationTable.setItems(FXCollections.observableArrayList(mulList));
+        mulStationsBox.getChildren().clear();
+        for (Map<String, Object> station : mulList) {
+            mulStationsBox.getChildren().add(createStationBox(station));
+        }
         
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> intList = (List<Map<String, Object>>) snapshot.get("intStations");
-        intStationTable.setItems(FXCollections.observableArrayList(intList));
+        intStationsBox.getChildren().clear();
+        for (Map<String, Object> station : intList) {
+            intStationsBox.getChildren().add(createStationBox(station));
+        }
         
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> loadList = (List<Map<String, Object>>) snapshot.get("loadBuffers");
-        loadBufferTable.setItems(FXCollections.observableArrayList(loadList));
+        loadStationsBox.getChildren().clear();
+        for (Map<String, Object> station : loadList) {
+            loadStationsBox.getChildren().add(createStationBox(station));
+        }
+        
+        // Update cache table
+        List<Map<String, Object>> cacheState = engine.cache.getCacheState();
+        cacheTable.setItems(FXCollections.observableArrayList(cacheState));
+        
+        // Update finish cycle table - keep history of all instructions
+        int currentCycle = engine.cycle;
+        
+        // Collect all busy stations
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> allStations = new ArrayList<>();
+        allStations.addAll(addList);
+        allStations.addAll(mulList);
+        allStations.addAll(intList);
+        allStations.addAll(loadList);
+        
+        // Update history with current busy stations
+        for (Map<String, Object> station : allStations) {
+            boolean busy = station.get("busy") != null && Boolean.parseBoolean(station.get("busy").toString());
+            String stationName = station.get("name") != null ? station.get("name").toString() : "";
+            
+            if (busy && station.get("inst") != null) {
+                // Update or add instruction to history
+                Map<String, Object> finishInfo = instructionHistory.getOrDefault(stationName, new HashMap<>());
+                finishInfo.put("station", stationName);
+                finishInfo.put("instruction", station.get("inst"));
+                finishInfo.put("status", "Executing");
+                
+                // Calculate finish cycle: current cycle + remaining cycles
+                Object remObj = station.get("remaining");
+                if (remObj != null) {
+                    try {
+                        int remaining = Integer.parseInt(remObj.toString());
+                        int finishCycle = currentCycle + remaining;
+                        finishInfo.put("finishCycle", finishCycle);
+                    } catch (NumberFormatException e) {
+                        finishInfo.put("finishCycle", "---");
+                    }
+                } else {
+                    finishInfo.put("finishCycle", "---");
+                }
+                instructionHistory.put(stationName, finishInfo);
+            } else if (!busy && instructionHistory.containsKey(stationName)) {
+                // Station just finished - mark as completed
+                Map<String, Object> finishInfo = instructionHistory.get(stationName);
+                if (!"Completed".equals(finishInfo.get("status"))) {
+                    // Mark as completed, keep the finish cycle from when it finished
+                    finishInfo.put("status", "Completed");
+                    // If we have a finish cycle, keep it; otherwise set to current cycle
+                    if (finishInfo.get("finishCycle") == null || "---".equals(finishInfo.get("finishCycle"))) {
+                        finishInfo.put("finishCycle", currentCycle);
+                    }
+                }
+            }
+        }
+        
+        // Convert history to list for display (sorted by station name)
+        List<Map<String, Object>> finishCycles = new ArrayList<>(instructionHistory.values());
+        finishCycles.sort((a, b) -> {
+            String nameA = a.get("station") != null ? a.get("station").toString() : "";
+            String nameB = b.get("station") != null ? b.get("station").toString() : "";
+            return nameA.compareTo(nameB);
+        });
+        finishCycleTable.setItems(FXCollections.observableArrayList(finishCycles));
         
         // Update registers (show first 10 of each type)
         @SuppressWarnings("unchecked")
