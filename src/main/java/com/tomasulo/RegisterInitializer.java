@@ -4,7 +4,7 @@ package com.tomasulo;
 public class RegisterInitializer {
     public static void initializeForTestCase1(RegisterFile rf) {
         // Test Case 1 setup
-        rf.set("R2", 100);  // Base address for loads/stores
+        rf.set("R2", 1000);  // Base address for loads/stores (memory at 1000-1024)
         rf.set("F4", 5);    // Multiplier operand
         rf.set("F1", 10);
         rf.set("F3", 20);
@@ -12,7 +12,7 @@ public class RegisterInitializer {
     
     public static void initializeForTestCase2(RegisterFile rf) {
         // Test Case 2 setup
-        rf.set("R2", 200);
+        rf.set("R2", 2000);  // Base address (memory at 2000-2020)
         rf.set("F1", 3);
         rf.set("F3", 7);
         rf.set("F4", 2);
