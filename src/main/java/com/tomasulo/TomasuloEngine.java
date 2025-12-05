@@ -16,6 +16,7 @@ public class TomasuloEngine {
     public int cycle = 0;
     public final List<String> history = new ArrayList<>();
     public int pc = 0; // program counter for branch handling
+    private int issuedCount = 0; // track how many instructions have been issued
     private final List<Instruction> originalProgram = new ArrayList<>();
 
     public TomasuloEngine(SimulatorConfig cfg) {
@@ -33,6 +34,7 @@ public class TomasuloEngine {
         originalProgram.clear();
         originalProgram.addAll(ins);
         pc = 0;
+        issuedCount = 0;
     }
 
     // Very simplified: each cycle we try to issue 1 instruction, then update executing stations, then writeback at most 1 result.
@@ -105,6 +107,17 @@ public class TomasuloEngine {
                 String t = registers.getTag(ins.src2);
                 if (t != null) free.qk = t; else free.vk = registers.get(ins.src2);
             }
+        } else if (ins.type == InstructionType.ADDI || ins.type == InstructionType.SUBI ||
+                   ins.type == InstructionType.DADDI || ins.type == InstructionType.DSUBI) {
+            // Integer immediate instructions: src1 is register, immediate goes to Vk
+            if (ins.src1 != null) {
+                String t = registers.getTag(ins.src1);
+                if (t != null) free.qj = t; else free.vj = registers.get(ins.src1);
+            }
+            // Put immediate value directly in Vk (no dependency)
+            if (ins.immediate != null) {
+                free.vk = ins.immediate;
+            }
         } else {
             // Regular ALU ops: sources
             if (ins.src1 != null) {
@@ -130,6 +143,7 @@ public class TomasuloEngine {
 
         history.add("Issued " + ins + " to " + free.name);
         instrQueue.remove(0);
+        issuedCount++; // Track that we issued an instruction
     }
 
     private List<ReservationStation> selectPool(Instruction ins) {
@@ -138,6 +152,7 @@ public class TomasuloEngine {
             case MUL: case DIV: case MUL_D: case DIV_D: return mulStations;
             case LD: case LW: case L_D: case L_S: case SD: case SW: case S_D: case S_W: return loadBuffers;
             case ADDI: case SUBI: case DADDI: case DSUBI: return intStations;
+            case BEQ: case BNE: return intStations;
             default: return addStations;
         }
     }
@@ -198,21 +213,57 @@ public class TomasuloEngine {
                 if (canStart) {
                     rs.executing = true;
                     
-                    // For loads, incorporate cache latency NOW
+                    // For loads, check cache and set up miss penalty if needed
                     if (isLoad(rs.inst)) {
                         int accessLatency = cache.access(rs.address, 4);
-                        rs.remaining = Math.max(rs.remaining, accessLatency);
-                        history.add(rs.name + " starts load from addr " + rs.address + 
-                                  " (cache latency=" + accessLatency + ")");
+                        int missPenalty = accessLatency - cfg.loadLatency; // Extract miss penalty
+                        
+                        if (missPenalty > 0) {
+                            // Cache miss - need to wait for miss penalty before load can execute
+                            rs.cacheMissPenalty = missPenalty;
+                            rs.remaining = cfg.loadLatency; // Load latency comes after miss penalty
+                            rs.cacheBlockLoaded = false;
+                            history.add(rs.name + " cache MISS at addr " + rs.address + 
+                                      " (miss penalty=" + missPenalty + ", load latency=" + cfg.loadLatency + ")");
+                        } else {
+                            // Cache hit - can execute immediately
+                            rs.cacheMissPenalty = 0;
+                            rs.remaining = cfg.loadLatency;
+                            rs.cacheBlockLoaded = true; // Already in cache
+                            history.add(rs.name + " cache HIT at addr " + rs.address + 
+                                      " (load latency=" + cfg.loadLatency + ")");
+                        }
                     } else {
                         history.add(rs.name + " starts executing " + rs.inst);
                     }
                 }
             }
             
-            // Decrement execution cycles
+            // Handle cache miss penalty countdown (before actual execution)
+            if (rs.executing && rs.cacheMissPenalty > 0) {
+                rs.cacheMissPenalty--;
+                if (rs.cacheMissPenalty == 0) {
+                    // Miss penalty paid - bring block into cache
+                    if (isLoad(rs.inst)) {
+                        cache.loadBlockIntoCache(rs.address);
+                        rs.cacheBlockLoaded = true;
+                        history.add(rs.name + " cache block loaded for addr " + rs.address + 
+                                  ", now executing load");
+                    }
+                }
+            }
+            
+            // Decrement execution cycles (only if cache is ready for loads)
             if (rs.executing && rs.remaining > 0) {
-                rs.remaining--;
+                // For loads, only decrement if cache block is loaded
+                if (isLoad(rs.inst)) {
+                    if (rs.cacheBlockLoaded) {
+                        rs.remaining--;
+                    }
+                } else {
+                    // Non-load instructions execute normally
+                    rs.remaining--;
+                }
                 if (rs.remaining == 0) {
                     rs.writebackPending = true;
                     history.add(rs.name + " finished execution of " + rs.inst);
@@ -268,11 +319,25 @@ public class TomasuloEngine {
             boolean condition = (ready.inst.type == InstructionType.BEQ) ? (val1 == val2) : (val1 != val2);
             
             if (condition) {
-                // Branch taken - in real implementation would flush pipeline
+                // Branch taken - jump to target address
                 int offset = (ready.inst.immediate == null) ? 0 : ready.inst.immediate;
+                int targetPC = issuedCount + offset; // Calculate absolute target PC
+                
                 history.add(ready.name + " writeback: Branch TAKEN (offset=" + offset + 
-                           "), val1=" + val1 + " val2=" + val2);
-                // Note: Full PC update not implemented in this simplified model
+                           "), val1=" + val1 + " val2=" + val2 + ", jumping to instruction " + targetPC);
+                
+                // Clear instruction queue and reload from target PC
+                if (targetPC >= 0 && targetPC < originalProgram.size()) {
+                    instrQueue.clear();
+                    // Add instructions from target PC onwards
+                    for (int i = targetPC; i < originalProgram.size(); i++) {
+                        instrQueue.add(originalProgram.get(i));
+                    }
+                    issuedCount = targetPC; // Update issued count to target PC
+                    history.add("Reloaded instruction queue from PC=" + targetPC);
+                } else {
+                    history.add("Branch target out of bounds: " + targetPC);
+                }
             } else {
                 history.add(ready.name + " writeback: Branch NOT TAKEN, val1=" + val1 + " val2=" + val2);
             }
@@ -280,7 +345,7 @@ public class TomasuloEngine {
             // Regular ALU or Load: compute result and writeback
             int value;
             if (isLoad(ready.inst)) {
-                // Load: read from cache
+                // Load: read from memory (cache block already loaded during execution)
                 value = cache.readWord(ready.address);
                 history.add(ready.name + " writeback: Load value=" + value + " from addr=" + ready.address);
             } else {

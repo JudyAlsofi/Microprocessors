@@ -14,6 +14,8 @@ public class ReservationStation {
     public boolean justIssued = false; // true in the cycle the instruction was issued
     public Integer address = null; // effective address for loads/stores
     public boolean addressReady = false; // true when address is computed
+    public int cacheMissPenalty = 0; // remaining cycles for cache miss penalty
+    public boolean cacheBlockLoaded = false; // true when cache block has arrived
 
     public ReservationStation(String name) {
         this.name = name;
@@ -30,5 +32,7 @@ public class ReservationStation {
         justIssued = false;
         address = null;
         addressReady = false;
+        cacheMissPenalty = 0;
+        cacheBlockLoaded = false;
     }
 }

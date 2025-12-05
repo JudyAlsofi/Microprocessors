@@ -29,6 +29,7 @@ public class MainApp extends Application {
     private TableView<String> instrTable = new TableView<>();
     private TableView<Map.Entry<String, Integer>> registerTable = new TableView<>();
     private TableView<Map<String, Object>> cacheTable = new TableView<>();
+    private TableView<Map<String, Object>> memoryTable = new TableView<>();
     private TableView<Map<String, Object>> finishCycleTable = new TableView<>();
     private Label cycleLabel = new Label("Cycle: 0");
     private Label cacheStatsLabel = new Label("Cache: Hits=0 Misses=0");
@@ -41,9 +42,10 @@ public class MainApp extends Application {
     private VBox mulStationsBox = new VBox(5);
     private VBox intStationsBox = new VBox(5);
     private VBox loadStationsBox = new VBox(5);
+    private VBox finishTimesBox = new VBox(0);
     
     // Config fields
-    private TextField addLatencyField, mulLatencyField, divLatencyField, loadLatencyField, storeLatencyField;
+    private TextField addLatencyField, mulLatencyField, divLatencyField, loadLatencyField, storeLatencyField, intLatencyField;
     private TextField cacheSizeField, blockSizeField, hitLatencyField, missPenaltyField;
     private TextField addStationsField, mulStationsField, intStationsField, loadBuffersField;
 
@@ -95,7 +97,6 @@ public class MainApp extends Application {
             log("Initialized registers for Test Case 1");
         });
         
-        Label cacheStatsLabel = new Label("Cache: Hits=0 Misses=0");
         cacheStatsLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: #666;");
         
         controls.getChildren().addAll(cycleLabel, new Separator(), loadBtn, stepBtn, run10, resetBtn, initRegsBtn, new Separator(), cacheStatsLabel);
@@ -136,6 +137,11 @@ public class MainApp extends Application {
         storeLatencyField = new TextField(String.valueOf(cfg.storeLatency));
         storeLatencyField.setPrefWidth(60);
         configGrid.add(storeLatencyField, 3, row++);
+
+        configGrid.add(new Label("Int Latency:"), 0, row);
+        intLatencyField = new TextField(String.valueOf(cfg.intLatency));
+        intLatencyField.setPrefWidth(60);
+        configGrid.add(intLatencyField, 1, row++);
         
         configGrid.add(new Label("Cache Size (B):"), 0, row);
         cacheSizeField = new TextField(String.valueOf(cfg.cacheSizeBytes));
@@ -199,14 +205,15 @@ public class MainApp extends Application {
         
         // Top row: Instruction Queue and Registers side by side
         HBox topRow = new HBox(15);
-        topRow.setPrefHeight(200);
+        topRow.setPrefHeight(450);
         
         // Instruction Queue
         VBox instrBox = new VBox(5);
         Label instrLabel = new Label("Instruction Queue");
         instrLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         instrTable.setItems(FXCollections.observableArrayList());
-        instrTable.setPrefHeight(150);
+        instrTable.setPrefHeight(400);
+        instrTable.setMaxHeight(400);
         TableColumn<String, String> instrCol = new TableColumn<>("Instruction");
         instrCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue()));
         instrCol.setPrefWidth(300);
@@ -219,7 +226,8 @@ public class MainApp extends Application {
         Label regLabel = new Label("Register File");
         regLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         registerTable.setItems(FXCollections.observableArrayList());
-        registerTable.setPrefHeight(150);
+        registerTable.setPrefHeight(400);
+        registerTable.setMaxHeight(400);
         TableColumn<Map.Entry<String, Integer>, String> regNameCol = new TableColumn<>("Register");
         regNameCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue().getKey()));
         regNameCol.setPrefWidth(80);
@@ -237,44 +245,58 @@ public class MainApp extends Application {
         regBox.getChildren().addAll(regLabel, registerTable);
         regBox.setPrefWidth(280);
         
-        // Finish Cycle Display
-        VBox finishBox = new VBox(5);
+        // Finish Cycle Display - styled like reservation stations
+        VBox finishBox = new VBox(8);
         Label finishLabel = new Label("Instruction Finish Times");
         finishLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        finishCycleTable.setItems(FXCollections.observableArrayList());
-        finishCycleTable.setPrefHeight(150);
+        finishLabel.setTextFill(Color.DARKBLUE);
         
-        TableColumn<Map<String, Object>, String> stationCol = new TableColumn<>("Station");
-        stationCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("station") != null ? d.getValue().get("station").toString() : ""));
-        stationCol.setPrefWidth(70);
+        // Create header with column separators
+        HBox finishHeader = new HBox(0);
+        finishHeader.setPadding(new Insets(5));
+        finishHeader.setStyle("-fx-background-color: #E0E0E0; -fx-border-color: #999; -fx-border-width: 1;");
         
-        TableColumn<Map<String, Object>, String> instCol = new TableColumn<>("Instruction");
-        instCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
-            d.getValue().get("instruction") != null ? d.getValue().get("instruction").toString() : ""));
-        instCol.setPrefWidth(150);
+        String[] finishHeaders = {"Station", "Instruction", "Finish", "Status"};
+        int[] finishColWidths = {70, 150, 80, 90};
         
-        TableColumn<Map<String, Object>, String> finishCol = new TableColumn<>("Finish Cycle");
-        finishCol.setCellValueFactory(d -> {
-            Object finish = d.getValue().get("finishCycle");
-            if (finish != null) {
-                return new javafx.beans.property.SimpleStringProperty(finish.toString());
-            }
-            return new javafx.beans.property.SimpleStringProperty("---");
-        });
-        finishCol.setPrefWidth(90);
+        for (int i = 0; i < finishHeaders.length; i++) {
+            VBox headerCell = new VBox();
+            headerCell.setPrefWidth(finishColWidths[i]);
+            headerCell.setAlignment(Pos.CENTER);
+            headerCell.setStyle("-fx-border-color: #999; -fx-border-width: 0 1 0 0; -fx-padding: 5;");
+            Label h = new Label(finishHeaders[i]);
+            h.setFont(Font.font("Arial", FontWeight.BOLD, 11));
+            h.setAlignment(Pos.CENTER);
+            headerCell.getChildren().add(h);
+            finishHeader.getChildren().add(headerCell);
+        }
         
-        TableColumn<Map<String, Object>, String> statusCol = new TableColumn<>("Status");
-        statusCol.setCellValueFactory(d -> {
-            Object status = d.getValue().get("status");
-            return new javafx.beans.property.SimpleStringProperty(
-                status != null ? status.toString() : "---");
-        });
-        statusCol.setPrefWidth(80);
+        // Create scrollable container for finish times
+        ScrollPane finishScrollPane = new ScrollPane();
+        finishScrollPane.setPrefHeight(370);
+        finishScrollPane.setMaxHeight(370);
+        finishScrollPane.setFitToWidth(true);
+        finishScrollPane.setStyle("-fx-background-color: white;");
         
-        finishCycleTable.getColumns().addAll(stationCol, instCol, finishCol, statusCol);
-        finishBox.getChildren().addAll(finishLabel, finishCycleTable);
-        finishBox.setPrefWidth(320);
+        finishScrollPane.setContent(finishTimesBox);
+        
+        finishBox.getChildren().addAll(finishLabel, finishHeader, finishScrollPane);
+        finishBox.setPrefWidth(400);
+
+        // Make sure all tables have the same settings
+        instrTable.setPrefHeight(250);
+        registerTable.setPrefHeight(250);
+        finishCycleTable.setPrefHeight(250);
+
+        // Set grow priority for all tables so they expand equally
+        VBox.setVgrow(instrTable, Priority.ALWAYS);
+        VBox.setVgrow(registerTable, Priority.ALWAYS);
+        VBox.setVgrow(finishCycleTable, Priority.ALWAYS);
+
+        // Make sure the HBox distributes space to all VBoxes equally
+        HBox.setHgrow(instrBox, Priority.ALWAYS);
+        HBox.setHgrow(regBox, Priority.ALWAYS);
+        HBox.setHgrow(finishBox, Priority.ALWAYS);
         
         topRow.getChildren().addAll(instrBox, regBox, finishBox);
         
@@ -302,7 +324,11 @@ public class MainApp extends Application {
         
         // Cache Display
         VBox cacheSection = createCacheSection();
-        stationsGrid.add(cacheSection, 2, 0, 1, 2); // Span 2 rows
+        stationsGrid.add(cacheSection, 2, 0); // First row, third column
+        
+        // Memory Display
+        VBox memorySection = createMemorySection();
+        stationsGrid.add(memorySection, 2, 1); // Second row, third column
         
         mainContent.getChildren().addAll(topRow, stationsGrid);
         scrollPane.setContent(mainContent);
@@ -405,6 +431,48 @@ public class MainApp extends Application {
         return box;
     }
     
+    private HBox createFinishTimeRow(Map<String, Object> finishData) {
+        HBox box = new HBox(0);
+        box.setPadding(new Insets(5));
+        box.setStyle("-fx-background-color: #F5F5F5; -fx-border-color: #999; -fx-border-width: 1;");
+        
+        String station = finishData.get("station") != null ? finishData.get("station").toString() : "";
+        String instruction = finishData.get("instruction") != null ? finishData.get("instruction").toString() : "";
+        String finish = finishData.get("finishCycle") != null ? finishData.get("finishCycle").toString() : "---";
+        String status = finishData.get("status") != null ? finishData.get("status").toString() : "---";
+        
+        // Column widths matching header
+        int[] colWidths = {70, 150, 80, 90};
+        String[] values = {station, instruction, finish, status};
+        Color[] colors = {
+            Color.BLACK, // station
+            Color.BLACK, // instruction
+            Color.BLACK, // finish
+            "Completed".equals(status) ? Color.GREEN : Color.ORANGE // status
+        };
+        
+        // Create cells with borders for each column
+        for (int i = 0; i < values.length; i++) {
+            VBox cell = new VBox();
+            cell.setPrefWidth(colWidths[i]);
+            cell.setAlignment(Pos.CENTER);
+            cell.setStyle("-fx-border-color: #999; -fx-border-width: 0 1 0 0; -fx-padding: 5;");
+            
+            Label label = new Label(values[i]);
+            if (i == 0) { // Station column
+                label.setFont(Font.font("Arial", FontWeight.BOLD, 11));
+            } else {
+                label.setFont(Font.font("Arial", 11));
+            }
+            label.setTextFill(colors[i]);
+            label.setAlignment(Pos.CENTER);
+            cell.getChildren().add(label);
+            box.getChildren().add(cell);
+        }
+        
+        return box;
+    }
+    
     private VBox createCacheSection() {
         VBox section = new VBox(8);
         Label titleLabel = new Label("Data Cache");
@@ -412,7 +480,8 @@ public class MainApp extends Application {
         titleLabel.setTextFill(Color.DARKBLUE);
         
         // Create cache table
-        cacheTable.setPrefHeight(400);
+        cacheTable.setPrefHeight(500);
+        cacheTable.setMaxHeight(500);
         cacheTable.setPrefWidth(350);
         
         // Index column
@@ -463,6 +532,51 @@ public class MainApp extends Application {
         return section;
     }
     
+    private VBox createMemorySection() {
+        VBox section = new VBox(8);
+        Label titleLabel = new Label("Memory (Non-Zero)");
+        titleLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        titleLabel.setTextFill(Color.DARKBLUE);
+        
+        // Create memory table
+        memoryTable.setPrefHeight(500);
+        memoryTable.setMaxHeight(500);
+        memoryTable.setPrefWidth(350);
+        
+        // Address column
+        TableColumn<Map<String, Object>, String> addrCol = new TableColumn<>("Address");
+        addrCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+            d.getValue().get("address") != null ? d.getValue().get("address").toString() : ""));
+        addrCol.setPrefWidth(80);
+        
+        // Value column (decimal)
+        TableColumn<Map<String, Object>, String> valueCol = new TableColumn<>("Value (Dec)");
+        valueCol.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(
+            d.getValue().get("value") != null ? d.getValue().get("value").toString() : ""));
+        valueCol.setPrefWidth(100);
+        
+        // Value column (hex)
+        TableColumn<Map<String, Object>, String> hexCol = new TableColumn<>("Value (Hex)");
+        hexCol.setCellValueFactory(d -> {
+            Object val = d.getValue().get("value");
+            if (val != null) {
+                try {
+                    int value = Integer.parseInt(val.toString());
+                    return new javafx.beans.property.SimpleStringProperty(String.format("0x%08X", value));
+                } catch (NumberFormatException e) {
+                    return new javafx.beans.property.SimpleStringProperty("---");
+                }
+            }
+            return new javafx.beans.property.SimpleStringProperty("---");
+        });
+        hexCol.setPrefWidth(120);
+        
+        memoryTable.getColumns().addAll(addrCol, valueCol, hexCol);
+        
+        section.getChildren().addAll(titleLabel, memoryTable);
+        return section;
+    }
+    
     private void applyConfig() {
         try {
             cfg.addLatency = Integer.parseInt(addLatencyField.getText());
@@ -470,6 +584,7 @@ public class MainApp extends Application {
             cfg.divLatency = Integer.parseInt(divLatencyField.getText());
             cfg.loadLatency = Integer.parseInt(loadLatencyField.getText());
             cfg.storeLatency = Integer.parseInt(storeLatencyField.getText());
+            cfg.intLatency = Integer.parseInt(intLatencyField.getText());
             cfg.cacheSizeBytes = Integer.parseInt(cacheSizeField.getText());
             cfg.blockSizeBytes = Integer.parseInt(blockSizeField.getText());
             cfg.cacheHitLatency = Integer.parseInt(hitLatencyField.getText());
@@ -485,14 +600,30 @@ public class MainApp extends Application {
 
     private void loadFromFile(File f) {
         try (BufferedReader br = new BufferedReader(new FileReader(f))) {
-            List<Instruction> ins = new ArrayList<>();
+            List<String> lines = new ArrayList<>();
+            Map<String, Integer> labels = new HashMap<>();
             String line;
+            
+            // First pass: collect lines and build label map
             while ((line = br.readLine()) != null) {
                 line = line.trim();
                 if (line.isEmpty() || line.startsWith("#")) continue;
-                Instruction parsed = parse(line);
+                
+                // Check for label
+                if (line.contains(":")) {
+                    String label = line.substring(0, line.indexOf(':')).trim();
+                    labels.put(label, lines.size()); // Map label to instruction index
+                }
+                lines.add(line);
+            }
+            
+            // Second pass: parse instructions with label resolution
+            List<Instruction> ins = new ArrayList<>();
+            for (int i = 0; i < lines.size(); i++) {
+                Instruction parsed = parse(lines.get(i), labels, i);
                 if (parsed != null) ins.add(parsed);
             }
+            
             engine.loadInstructions(ins);
             log("Loaded " + ins.size() + " instructions from " + f.getName());
             refreshUI();
@@ -502,10 +633,16 @@ public class MainApp extends Application {
         }
     }
 
-    private Instruction parse(String line) {
+    private Instruction parse(String line, Map<String, Integer> labels, int currentIndex) {
         // very simple parser for forms like: L.D F6, 0(R2)
         try {
             String raw = line;
+            
+            // Strip label if present (e.g., "LOOP: L.D F0, 8(R1)")
+            if (line.contains(":")) {
+                line = line.substring(line.indexOf(':') + 1).trim();
+            }
+            
             String op = line.split("\\s+")[0].replaceAll("\\.", "_").toUpperCase();
             String rest = line.substring(line.indexOf(' ') + 1).trim();
             String[] parts = rest.split(",");
@@ -541,10 +678,21 @@ public class MainApp extends Application {
                     int imm3 = Integer.parseInt(parts[2].trim());
                     return new Instruction(type, dd, ss, null, imm3, raw);
                 case BEQ: case BNE:
-                    // BEQ R1, R2, offset
+                    // BEQ R1, R2, offset or BEQ R1, R2, LABEL
                     String bb0 = parts[0].trim();
                     String bb1 = parts[1].trim();
-                    int off = Integer.parseInt(parts[2].trim());
+                    String offsetStr = parts[2].trim();
+                    int off;
+                    
+                    // Check if it's a label or numeric offset
+                    if (labels.containsKey(offsetStr)) {
+                        // Calculate relative offset: target - (current + 1)
+                        off = labels.get(offsetStr) - (currentIndex + 1);
+                    } else {
+                        // Direct numeric offset
+                        off = Integer.parseInt(offsetStr);
+                    }
+                    
                     return new Instruction(type, null, bb0, bb1, off, raw);
                 default:
                     return new Instruction(type, null, null, null, null, raw);
@@ -606,6 +754,10 @@ public class MainApp extends Application {
         List<Map<String, Object>> cacheState = engine.cache.getCacheState();
         cacheTable.setItems(FXCollections.observableArrayList(cacheState));
         
+        // Update memory table (show non-zero words only)
+        List<Map<String, Object>> memoryState = engine.cache.getMemoryState();
+        memoryTable.setItems(FXCollections.observableArrayList(memoryState));
+        
         // Update finish cycle table - keep history of all instructions
         int currentCycle = engine.cycle;
         
@@ -664,7 +816,12 @@ public class MainApp extends Application {
             String nameB = b.get("station") != null ? b.get("station").toString() : "";
             return nameA.compareTo(nameB);
         });
-        finishCycleTable.setItems(FXCollections.observableArrayList(finishCycles));
+        
+        // Update finish times display with styled rows
+        finishTimesBox.getChildren().clear();
+        for (Map<String, Object> finishData : finishCycles) {
+            finishTimesBox.getChildren().add(createFinishTimeRow(finishData));
+        }
         
         // Update registers (show all 32 of each type)
         @SuppressWarnings("unchecked")

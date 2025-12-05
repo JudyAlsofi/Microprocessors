@@ -75,7 +75,8 @@ public class MemoryCache {
     }
 
     public int access(int address, int size) {
-        // returns access latency (hitLatency or missPenalty + hitLatency)
+        // Check hit/miss and return latency WITHOUT updating cache yet
+        // Cache will be updated only after the load completes
         int idx = indexOf(address);
         int tag = tagOf(address);
         CacheLine line = linesArr[idx];
@@ -84,15 +85,25 @@ public class MemoryCache {
             return hitLatency;
         } else {
             misses++;
-            // load block from memory (simulated): bring into cache
-            line.valid = true;
-            line.tag = tag;
-            // fill bytes from memory (if absent default 0)
-            int base = tag * blockSizeBytes;
-            for (int i = 0; i < blockSizeBytes; i++) {
-                memory.putIfAbsent(base + i, 0);
-            }
+            // Don't update cache here - will be updated after miss penalty is paid
             return missPenalty + hitLatency;
+        }
+    }
+    
+    // Called after a load completes to bring the block into cache
+    public void loadBlockIntoCache(int address) {
+        int idx = indexOf(address);
+        int tag = tagOf(address);
+        CacheLine line = linesArr[idx];
+        
+        // Bring block into cache
+        line.valid = true;
+        line.tag = tag;
+        
+        // Fill bytes from memory (if absent default 0)
+        int base = tag * blockSizeBytes;
+        for (int i = 0; i < blockSizeBytes; i++) {
+            memory.putIfAbsent(base + i, 0);
         }
     }
 
@@ -106,20 +117,25 @@ public class MemoryCache {
     }
 
     public void writeWord(int address, int value) {
-        // Write word to memory and update cache if block is present
-        for (int i = 0; i < 4; i++) {
-            memory.put(address + i, (value >> (8 * i)) & 0xFF);
-        }
-        // Mark cache line as valid with updated data
+        // Write word to memory and update cache
+        // Check if it's a hit or miss for statistics
         int idx = indexOf(address);
         int tag = tagOf(address);
         CacheLine line = linesArr[idx];
+        
         if (line.valid && line.tag == tag) {
-            // Cache hit on write - data is already in cache
+            // Cache hit on write
+            hits++;
         } else {
-            // Write-allocate: bring block into cache
+            // Cache miss - write-allocate: bring block into cache
+            misses++;
             line.valid = true;
             line.tag = tag;
+        }
+        
+        // Write to memory
+        for (int i = 0; i < 4; i++) {
+            memory.put(address + i, (value >> (8 * i)) & 0xFF);
         }
     }
     
@@ -155,6 +171,31 @@ public class MemoryCache {
             }
             state.add(lineInfo);
         }
+        return state;
+    }
+    
+    // Get memory state (non-zero words only) for display
+    public List<Map<String, Object>> getMemoryState() {
+        List<Map<String, Object>> state = new ArrayList<>();
+        Set<Integer> wordAddresses = new TreeSet<>();
+        
+        // Find all word-aligned addresses that have non-zero data
+        for (Integer byteAddr : memory.keySet()) {
+            int wordAddr = (byteAddr / 4) * 4; // Align to word boundary
+            wordAddresses.add(wordAddr);
+        }
+        
+        // Read each word and add to state if non-zero
+        for (Integer addr : wordAddresses) {
+            int value = readWord(addr);
+            if (value != 0) {
+                Map<String, Object> entry = new HashMap<>();
+                entry.put("address", addr);
+                entry.put("value", value);
+                state.add(entry);
+            }
+        }
+        
         return state;
     }
 

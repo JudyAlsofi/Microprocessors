@@ -16,19 +16,26 @@ public class RegisterFile {
     }
 
     public int get(String r) {
+        // R0 is always 0
+        if ("R0".equals(r)) return 0;
         return regs.getOrDefault(r, 0);
     }
 
     public void set(String r, int v) {
+        // R0 is hardwired to 0 and cannot be changed
+        if ("R0".equals(r)) return;
         regs.put(r, v);
     }
 
     public void setTag(String r, String station) {
-        if (r == null) return;
+        // R0 cannot have a tag (always available as 0)
+        if (r == null || "R0".equals(r)) return;
         tag.put(r, station);
     }
 
     public String getTag(String r) {
+        // R0 never has a tag (always ready)
+        if ("R0".equals(r)) return null;
         return tag.get(r);
     }
 

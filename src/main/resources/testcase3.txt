@@ -1,0 +1,8 @@
+# Test Case 3: Loop Code
+DADDI R1, R1, 24
+DADDI R2, R2, 0
+LOOP: L.D F0, 8(R1)
+MUL.D F4, F0, F2
+S.D F4, 8(R1)
+DSUBI R1, R1, 8
+BNE R1, R2, LOOP
