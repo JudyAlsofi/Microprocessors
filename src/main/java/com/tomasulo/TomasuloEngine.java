@@ -202,27 +202,27 @@ public class TomasuloEngine {
                     rs.addressReady = true;
                     history.add(rs.name + " computed address: " + rs.address);
                     
-                    // For loads, immediately check cache to detect miss/hit and start cache access countdown
+                    // For loads, immediately check cache to detect miss/hit and start miss penalty countdown
                     if (isLoad(rs.inst)) {
-                        int cacheAccessLatency = cache.access(rs.address, 4);
-                        // cacheAccessLatency = hitLatency (2) on hit, or (hitLatency + missPenalty) (12) on miss
+                        int missPenalty = cache.access(rs.address, 4);
+                        // missPenalty = 0 on hit, or 10 on miss
                         
-                        if (cacheAccessLatency > cfg.cacheHitLatency) {
-                            // Cache miss - need to count down cache access latency (includes hit + miss penalty)
-                            rs.cacheMissPenalty = cacheAccessLatency;
-                            rs.remaining = cfg.loadLatency; // Load execution comes after cache access
+                        if (missPenalty > 0) {
+                            // Cache miss - count down miss penalty, then execute load
+                            rs.cacheMissPenalty = missPenalty;
+                            rs.remaining = cfg.loadLatency; // Load execution (includes hit latency) comes after miss penalty
                             rs.cacheBlockLoaded = false;
-                            rs.executing = true; // Mark as executing so cache access countdown starts
+                            rs.executing = true; // Mark as executing so miss penalty countdown starts
                             history.add(rs.name + " cache MISS at addr " + rs.address + 
-                                      " (cache access latency=" + cacheAccessLatency + ", load latency=" + cfg.loadLatency + ")");
+                                      " (miss penalty=" + missPenalty + " cycles, then load latency=" + cfg.loadLatency + " cycles)");
                         } else {
-                            // Cache hit - need to count down hit latency before load execution
-                            rs.cacheMissPenalty = cacheAccessLatency; // Hit latency countdown
-                            rs.remaining = cfg.loadLatency; // Load execution comes after hit latency
-                            rs.cacheBlockLoaded = true; // Already in cache, just need hit latency
-                            rs.executing = true; // Mark as executing so hit latency countdown starts
+                            // Cache hit - no miss penalty, just execute load
+                            rs.cacheMissPenalty = 0;
+                            rs.remaining = cfg.loadLatency; // Load execution includes hit latency
+                            rs.cacheBlockLoaded = true; // Already in cache
+                            rs.executing = true;
                             history.add(rs.name + " cache HIT at addr " + rs.address + 
-                                      " (hit latency=" + cacheAccessLatency + ", load latency=" + cfg.loadLatency + ")");
+                                      " (load latency=" + cfg.loadLatency + " cycles)");
                         }
                     }
                 }
@@ -230,25 +230,25 @@ public class TomasuloEngine {
             
             // For stores: check cache when both address AND store value are ready
             if (isStore(rs.inst) && rs.addressReady && !rs.executing && rs.qk == null) {
-                int cacheAccessLatency = cache.access(rs.address, 4);
-                // cacheAccessLatency = hitLatency (2) on hit, or (hitLatency + missPenalty) (12) on miss
+                int missPenalty = cache.access(rs.address, 4);
+                // missPenalty = 0 on hit, or 10 on miss
                 
-                if (cacheAccessLatency > cfg.cacheHitLatency) {
-                    // Cache miss - need to count down cache access latency (includes hit + miss penalty)
-                    rs.cacheMissPenalty = cacheAccessLatency;
-                    rs.remaining = cfg.storeLatency; // Store execution comes after cache access
+                if (missPenalty > 0) {
+                    // Cache miss - count down miss penalty, then execute store
+                    rs.cacheMissPenalty = missPenalty;
+                    rs.remaining = cfg.storeLatency; // Store execution (includes hit latency) comes after miss penalty
                     rs.cacheBlockLoaded = false;
-                    rs.executing = true; // Mark as executing so cache access countdown starts
+                    rs.executing = true; // Mark as executing so miss penalty countdown starts
                     history.add(rs.name + " cache MISS at addr " + rs.address + 
-                              " (cache access latency=" + cacheAccessLatency + ", store latency=" + cfg.storeLatency + ")");
+                              " (miss penalty=" + missPenalty + " cycles, then store latency=" + cfg.storeLatency + " cycles)");
                 } else {
-                    // Cache hit - need to count down hit latency before store execution
-                    rs.cacheMissPenalty = cacheAccessLatency; // Hit latency countdown
-                    rs.remaining = cfg.storeLatency; // Store execution comes after hit latency
-                    rs.cacheBlockLoaded = true; // Already in cache, just need hit latency
-                    rs.executing = true; // Mark as executing so hit latency countdown starts
+                    // Cache hit - no miss penalty, just execute store
+                    rs.cacheMissPenalty = 0;
+                    rs.remaining = cfg.storeLatency; // Store execution includes hit latency
+                    rs.cacheBlockLoaded = true; // Already in cache
+                    rs.executing = true;
                     history.add(rs.name + " cache HIT at addr " + rs.address + 
-                              " (hit latency=" + cacheAccessLatency + ", store latency=" + cfg.storeLatency + ")");
+                              " (store latency=" + cfg.storeLatency + " cycles)");
                 }
             }
             

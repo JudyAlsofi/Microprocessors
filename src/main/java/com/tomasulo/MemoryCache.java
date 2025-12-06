@@ -75,18 +75,19 @@ public class MemoryCache {
     }
 
     public int access(int address, int size) {
-        // Check hit/miss and return latency WITHOUT updating cache yet
-        // Cache will be updated only after the load completes
+        // Check hit/miss and return MISS PENALTY only (not including hit latency)
+        // Hit latency is part of the load/store execution time
+        // Cache will be updated only after miss penalty is paid
         int idx = indexOf(address);
         int tag = tagOf(address);
         CacheLine line = linesArr[idx];
         if (line.valid && line.tag == tag) {
             hits++;
-            return hitLatency;
+            return 0; // Hit - no miss penalty, only execution time
         } else {
             misses++;
             // Don't update cache here - will be updated after miss penalty is paid
-            return missPenalty + hitLatency;
+            return missPenalty; // Return only miss penalty, not including hit latency
         }
     }
     
