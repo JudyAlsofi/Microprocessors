@@ -83,7 +83,7 @@ public class TomasuloEngine {
         if (ins.type == InstructionType.LD || ins.type == InstructionType.LW || 
             ins.type == InstructionType.L_D || ins.type == InstructionType.L_S ||
             ins.type == InstructionType.SD || ins.type == InstructionType.SW ||
-            ins.type == InstructionType.S_D || ins.type == InstructionType.S_W) {
+            ins.type == InstructionType.S_S || ins.type == InstructionType.S_D || ins.type == InstructionType.S_W) {
             // src1 is base register for address calculation
             if (ins.src1 != null) {
                 String t = registers.getTag(ins.src1);
@@ -91,7 +91,7 @@ public class TomasuloEngine {
             }
             // For stores, src2 is the value to store
             if (ins.type == InstructionType.SD || ins.type == InstructionType.SW ||
-                ins.type == InstructionType.S_D || ins.type == InstructionType.S_W) {
+                ins.type == InstructionType.S_S || ins.type == InstructionType.S_D || ins.type == InstructionType.S_W) {
                 if (ins.src2 != null) {
                     String t = registers.getTag(ins.src2);
                     if (t != null) free.qk = t; else free.vk = registers.get(ins.src2);
@@ -133,7 +133,7 @@ public class TomasuloEngine {
         // destination tagging (not for stores or branches)
         if (ins.dest != null && 
             ins.type != InstructionType.SD && ins.type != InstructionType.SW &&
-            ins.type != InstructionType.S_D && ins.type != InstructionType.S_W &&
+            ins.type != InstructionType.S_S && ins.type != InstructionType.S_D && ins.type != InstructionType.S_W &&
             ins.type != InstructionType.BEQ && ins.type != InstructionType.BNE) {
             registers.setTag(ins.dest, free.name);
         }
@@ -148,9 +148,9 @@ public class TomasuloEngine {
 
     private List<ReservationStation> selectPool(Instruction ins) {
         switch (ins.type) {
-            case ADD: case SUB: case ADD_D: case SUB_D: return addStations;
-            case MUL: case DIV: case MUL_D: case DIV_D: return mulStations;
-            case LD: case LW: case L_D: case L_S: case SD: case SW: case S_D: case S_W: return loadBuffers;
+            case ADD: case SUB: case ADD_D: case SUB_D: case ADD_S: case SUB_S: return addStations;
+            case MUL: case DIV: case MUL_D: case DIV_D: case MUL_S: case DIV_S: return mulStations;
+            case LD: case LW: case L_D: case L_S: case SD: case SW: case S_S: case S_D: case S_W: return loadBuffers;
             case ADDI: case SUBI: case DADDI: case DSUBI: return intStations;
             case BEQ: case BNE: return intStations;
             default: return addStations;
@@ -159,11 +159,11 @@ public class TomasuloEngine {
 
     private int estimateLatency(Instruction ins) {
         switch (ins.type) {
-            case MUL: case MUL_D: return cfg.mulLatency;
-            case DIV: case DIV_D: return cfg.divLatency;
-            case ADD: case SUB: case ADD_D: case SUB_D: return cfg.addLatency;
+            case MUL: case MUL_D: case MUL_S: return cfg.mulLatency;
+            case DIV: case DIV_D: case DIV_S: return cfg.divLatency;
+            case ADD: case SUB: case ADD_D: case SUB_D: case ADD_S: case SUB_S: return cfg.addLatency;
             case LD: case LW: case L_D: case L_S: return cfg.loadLatency;
-            case SD: case SW: case S_D: case S_W: return cfg.storeLatency;
+            case SD: case SW: case S_S: case S_D: case S_W: return cfg.storeLatency;
             case ADDI: case SUBI: case DADDI: case DSUBI: return cfg.intLatency;
             default: return cfg.intLatency;
         }
@@ -180,6 +180,19 @@ public class TomasuloEngine {
             // Skip if just issued this cycle - cannot start execution until next cycle
             if (rs.justIssued) continue;
             
+            // For load/store: check if another load/store is already executing
+            // Only ONE load/store can execute at a time (single load/store unit)
+            if (isLoadOrStore(rs.inst) && !rs.executing) {
+                boolean anotherLoadStoreExecuting = false;
+                for (ReservationStation other : loadBuffers) {
+                    if (other != rs && other.busy && other.executing) {
+                        anotherLoadStoreExecuting = true;
+                        break;
+                    }
+                }
+                if (anotherLoadStoreExecuting) continue; // Wait for other load/store to finish
+            }
+            
             // For load/store: compute effective address when base register ready
             if (!rs.addressReady && isLoadOrStore(rs.inst)) {
                 if (rs.qj == null) { // base register ready
@@ -188,22 +201,76 @@ public class TomasuloEngine {
                     rs.address = base + offset;
                     rs.addressReady = true;
                     history.add(rs.name + " computed address: " + rs.address);
+                    
+                    // For loads, immediately check cache to detect miss/hit and start cache access countdown
+                    if (isLoad(rs.inst)) {
+                        int cacheAccessLatency = cache.access(rs.address, 4);
+                        // cacheAccessLatency = hitLatency (2) on hit, or (hitLatency + missPenalty) (12) on miss
+                        
+                        if (cacheAccessLatency > cfg.cacheHitLatency) {
+                            // Cache miss - need to count down cache access latency (includes hit + miss penalty)
+                            rs.cacheMissPenalty = cacheAccessLatency;
+                            rs.remaining = cfg.loadLatency; // Load execution comes after cache access
+                            rs.cacheBlockLoaded = false;
+                            rs.executing = true; // Mark as executing so cache access countdown starts
+                            history.add(rs.name + " cache MISS at addr " + rs.address + 
+                                      " (cache access latency=" + cacheAccessLatency + ", load latency=" + cfg.loadLatency + ")");
+                        } else {
+                            // Cache hit - need to count down hit latency before load execution
+                            rs.cacheMissPenalty = cacheAccessLatency; // Hit latency countdown
+                            rs.remaining = cfg.loadLatency; // Load execution comes after hit latency
+                            rs.cacheBlockLoaded = true; // Already in cache, just need hit latency
+                            rs.executing = true; // Mark as executing so hit latency countdown starts
+                            history.add(rs.name + " cache HIT at addr " + rs.address + 
+                                      " (hit latency=" + cacheAccessLatency + ", load latency=" + cfg.loadLatency + ")");
+                        }
+                    }
                 }
             }
             
-            // Start execution when operands ready
+            // For stores: check cache when both address AND store value are ready
+            if (isStore(rs.inst) && rs.addressReady && !rs.executing && rs.qk == null) {
+                int cacheAccessLatency = cache.access(rs.address, 4);
+                // cacheAccessLatency = hitLatency (2) on hit, or (hitLatency + missPenalty) (12) on miss
+                
+                if (cacheAccessLatency > cfg.cacheHitLatency) {
+                    // Cache miss - need to count down cache access latency (includes hit + miss penalty)
+                    rs.cacheMissPenalty = cacheAccessLatency;
+                    rs.remaining = cfg.storeLatency; // Store execution comes after cache access
+                    rs.cacheBlockLoaded = false;
+                    rs.executing = true; // Mark as executing so cache access countdown starts
+                    history.add(rs.name + " cache MISS at addr " + rs.address + 
+                              " (cache access latency=" + cacheAccessLatency + ", store latency=" + cfg.storeLatency + ")");
+                } else {
+                    // Cache hit - need to count down hit latency before store execution
+                    rs.cacheMissPenalty = cacheAccessLatency; // Hit latency countdown
+                    rs.remaining = cfg.storeLatency; // Store execution comes after hit latency
+                    rs.cacheBlockLoaded = true; // Already in cache, just need hit latency
+                    rs.executing = true; // Mark as executing so hit latency countdown starts
+                    history.add(rs.name + " cache HIT at addr " + rs.address + 
+                              " (hit latency=" + cacheAccessLatency + ", store latency=" + cfg.storeLatency + ")");
+                }
+            }
+            
+            // For load/store: check if another load/store is already executing (in actual execution phase)
+            // Only ONE load/store can be in actual execution at a time (single load/store unit)
+            boolean canExecuteLoadStore = true;
+            if (isLoadOrStore(rs.inst) && rs.cacheBlockLoaded) {
+                for (ReservationStation other : loadBuffers) {
+                    if (other != rs && other.busy && other.executing && other.cacheBlockLoaded && other.remaining > 0) {
+                        canExecuteLoadStore = false;
+                        break;
+                    }
+                }
+            }
+            
+            // Start execution when operands ready (for non-loads or stores)
             if (!rs.executing) {
                 boolean canStart = false;
                 
                 if (isLoadOrStore(rs.inst)) {
-                    // Loads: need address ready
-                    // Stores: need address + value ready
-                    if (rs.inst.type == InstructionType.SD || rs.inst.type == InstructionType.SW ||
-                        rs.inst.type == InstructionType.S_D || rs.inst.type == InstructionType.S_W) {
-                        canStart = rs.addressReady && rs.qk == null; // need store value
-                    } else {
-                        canStart = rs.addressReady;
-                    }
+                    // Loads/stores already handled above during address computation
+                    canStart = false;
                 } else if (rs.inst.type == InstructionType.BEQ || rs.inst.type == InstructionType.BNE) {
                     canStart = rs.qj == null && rs.qk == null; // both operands ready
                 } else {
@@ -212,56 +279,44 @@ public class TomasuloEngine {
                 
                 if (canStart) {
                     rs.executing = true;
-                    
-                    // For loads, check cache and set up miss penalty if needed
-                    if (isLoad(rs.inst)) {
-                        int accessLatency = cache.access(rs.address, 4);
-                        int missPenalty = accessLatency - cfg.loadLatency; // Extract miss penalty
-                        
-                        if (missPenalty > 0) {
-                            // Cache miss - need to wait for miss penalty before load can execute
-                            rs.cacheMissPenalty = missPenalty;
-                            rs.remaining = cfg.loadLatency; // Load latency comes after miss penalty
-                            rs.cacheBlockLoaded = false;
-                            history.add(rs.name + " cache MISS at addr " + rs.address + 
-                                      " (miss penalty=" + missPenalty + ", load latency=" + cfg.loadLatency + ")");
-                        } else {
-                            // Cache hit - can execute immediately
-                            rs.cacheMissPenalty = 0;
-                            rs.remaining = cfg.loadLatency;
-                            rs.cacheBlockLoaded = true; // Already in cache
-                            history.add(rs.name + " cache HIT at addr " + rs.address + 
-                                      " (load latency=" + cfg.loadLatency + ")");
-                        }
-                    } else {
-                        history.add(rs.name + " starts executing " + rs.inst);
-                    }
+                    history.add(rs.name + " starts executing " + rs.inst);
                 }
             }
             
-            // Handle cache miss penalty countdown (before actual execution)
+            // Handle cache access latency countdown (hit latency or miss penalty+hit latency)
+            // This happens BEFORE load execution phase, and doesn't require load/store unit
             if (rs.executing && rs.cacheMissPenalty > 0) {
                 rs.cacheMissPenalty--;
                 if (rs.cacheMissPenalty == 0) {
-                    // Miss penalty paid - bring block into cache
+                    // Cache access complete
                     if (isLoad(rs.inst)) {
-                        cache.loadBlockIntoCache(rs.address);
-                        rs.cacheBlockLoaded = true;
-                        history.add(rs.name + " cache block loaded for addr " + rs.address + 
-                                  ", now executing load");
+                        if (!rs.cacheBlockLoaded) {
+                            // Was a miss - now bring block into cache
+                            cache.loadBlockIntoCache(rs.address);
+                            rs.cacheBlockLoaded = true;
+                            history.add(rs.name + " cache block loaded for addr " + rs.address);
+                        } else {
+                            // Was a hit - cache access latency complete
+                            history.add(rs.name + " cache hit latency complete for addr " + rs.address);
+                        }
                     }
                 }
             }
             
-            // Decrement execution cycles (only if cache is ready for loads)
+            // Decrement execution cycles (only after cache access is complete for loads/stores, and load/store unit is available)
             if (rs.executing && rs.remaining > 0) {
-                // For loads, only decrement if cache block is loaded
+                // For loads, only decrement if cache access is done (cacheMissPenalty == 0) AND no other load/store is executing
                 if (isLoad(rs.inst)) {
-                    if (rs.cacheBlockLoaded) {
+                    if (rs.cacheMissPenalty == 0 && canExecuteLoadStore) {
+                        rs.remaining--;
+                    }
+                } else if (isStore(rs.inst)) {
+                    // Stores: only decrement if cache access is done (cacheMissPenalty == 0) AND no other load/store is executing
+                    if (rs.cacheMissPenalty == 0 && canExecuteLoadStore) {
                         rs.remaining--;
                     }
                 } else {
-                    // Non-load instructions execute normally
+                    // Non-load/store instructions execute normally
                     rs.remaining--;
                 }
                 if (rs.remaining == 0) {
@@ -276,7 +331,7 @@ public class TomasuloEngine {
         return ins.type == InstructionType.LD || ins.type == InstructionType.LW ||
                ins.type == InstructionType.L_D || ins.type == InstructionType.L_S ||
                ins.type == InstructionType.SD || ins.type == InstructionType.SW ||
-               ins.type == InstructionType.S_D || ins.type == InstructionType.S_W;
+               ins.type == InstructionType.S_S || ins.type == InstructionType.S_D || ins.type == InstructionType.S_W;
     }
     
     private boolean isLoad(Instruction ins) {
@@ -286,7 +341,7 @@ public class TomasuloEngine {
     
     private boolean isStore(Instruction ins) {
         return ins.type == InstructionType.SD || ins.type == InstructionType.SW ||
-               ins.type == InstructionType.S_D || ins.type == InstructionType.S_W;
+               ins.type == InstructionType.S_S || ins.type == InstructionType.S_D || ins.type == InstructionType.S_W;
     }
 
     private void writebackStep() {
@@ -390,10 +445,10 @@ public class TomasuloEngine {
         int imm = (rs.inst.immediate == null) ? 0 : rs.inst.immediate;
         
         switch (rs.inst.type) {
-            case ADD: case ADD_D: return v1 + v2;
-            case SUB: case SUB_D: return v1 - v2;
-            case MUL: case MUL_D: return v1 * v2;
-            case DIV: case DIV_D: return (v2 != 0) ? v1 / v2 : 0;
+            case ADD: case ADD_D: case ADD_S: return v1 + v2;
+            case SUB: case SUB_D: case SUB_S: return v1 - v2;
+            case MUL: case MUL_D: case MUL_S: return v1 * v2;
+            case DIV: case DIV_D: case DIV_S: return (v2 != 0) ? v1 / v2 : 0;
             case ADDI: case DADDI: return v1 + imm;
             case SUBI: case DSUBI: return v1 - imm;
             default: return cycle * 10 + Math.abs(Objects.hashCode(rs.inst.raw)) % 100;

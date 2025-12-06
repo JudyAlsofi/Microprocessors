@@ -656,7 +656,7 @@ public class MainApp extends Application {
                     int imm = Integer.parseInt(addr.substring(0, p).trim());
                     String base = addr.substring(p + 1, addr.indexOf(')')).trim();
                     return new Instruction(type, dest, base, null, imm, raw);
-                case SD: case SW: case S_D: case S_W:
+                case SD: case SW: case S_S: case S_D: case S_W:
                     // src, offset(Rx)
                     String src = parts[0].trim();
                     String addr2 = parts[1].trim();
@@ -666,6 +666,7 @@ public class MainApp extends Application {
                     return new Instruction(type, null, base2, src, imm2, raw);
                 case ADD: case SUB: case MUL: case DIV:
                 case ADD_D: case SUB_D: case MUL_D: case DIV_D:
+                case ADD_S: case SUB_S: case MUL_S: case DIV_S:
                     // dest, src1, src2
                     String d = parts[0].trim();
                     String s1 = parts[1].trim();
